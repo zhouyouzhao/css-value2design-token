@@ -1,11 +1,19 @@
 {
-  "name": "value2design-token",
-  "displayName": "value2design-token",
+  "name": "css-value2design-token",
+  "displayName": "css-value2design-token",
   "description": "",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.80.0"
   },
+  "keywords": [
+    "css",
+    "design token",
+    "tailwindcss",
+    "token",
+    "value2token",
+    "theme"
+  ],
   "categories": [
     "Other"
   ],
@@ -14,10 +22,38 @@
   "contributes": {
     "commands": [
       {
-        "command": "value2design-token.helloWorld",
-        "title": "Hello World"
+        "command": "css-value2design-token.findAndReplace",
+        "title": "Find Design Token"
       }
-    ]
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "css-value2design-token.findAndReplace",
+          "group": "navigation@9",
+          "when": "editorHasSelection || editorTextFocus"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "css-value2design-token.findAndReplace",
+        "key": "cmd+shift+t",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "CSS Value → Design Token",
+      "properties": {
+        "css-value2design-token.sources": {
+          "type": "array",
+          "default": [
+            "src/**/*.css"
+          ],
+          "description": "文件路径 (glob)，用于扫描 css 中的 design tokens"
+        }
+      }
+    }
   },
   "scripts": {
     "commit": "git-cz --disable-emoji",
