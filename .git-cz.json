@@ -1,0 +1,75 @@
+{
+  "disableEmoji": true,
+  "format": "{type}{scope}: {emoji}{subject}",
+  "list": [
+    "feat",
+    "fix",
+    "refactor",
+    "chore",
+    "style",
+    "docs",
+    "test",
+    "ci",
+    "perf",
+    "review",
+    "release"
+  ],
+  "maxMessageLength": 64,
+  "minMessageLength": 3,
+  "questions": [
+    "type",
+    "scope",
+    "subject",
+    "body",
+    "breaking",
+    "issues",
+    "lerna"
+  ],
+  "scopes": [],
+  "types": {
+    "chore": {
+      "description": "构建功能变更或者依赖库升级、其他变更（Build process or auxiliary tool changes）",
+      "value": "chore"
+    },
+    "ci": {
+      "description": "发布功能代码变化（CI related changes）",
+      "value": "ci"
+    },
+    "docs": {
+      "description": "新增或者修改文档（Documentation only changes）",
+      "value": "docs"
+    },
+    "feat": {
+      "description": "新增功能（A new feature）",
+      "value": "feat"
+    },
+    "fix": {
+      "description": "修复Bug（A bug fix）",
+      "value": "fix"
+    },
+    "perf": {
+      "description": "提高性能或者体验（A code change that improves performance）",
+      "value": "perf"
+    },
+    "refactor": {
+      "description": "重构代码（A code change that neither fixes a bug or adds a feature）",
+      "value": "refactor"
+    },
+    "release": {
+      "description": "发版（Create a release commit）",
+      "value": "release"
+    },
+    "style": {
+      "description": "代码风格变更（Markup, white-space, formatting, missing semi-colons...）",
+      "value": "style"
+    },
+    "test": {
+      "description": "新增或者修改测试用例（Adding missing tests）",
+      "value": "test"
+    },
+    "review": {
+      "description": "完成code review",
+      "value": "review"
+    }
+  }
+}
