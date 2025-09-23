@@ -1,54 +1,56 @@
-import * as vscode from "vscode";
-import * as fs from "node:fs/promises";
-import { glob } from "glob";
-import csstree, { CssNode, Rule, Atrule, Declaration } from "css-tree";
-import { normalizeCssValue } from "./normalize";
+// src/lib/indexer.ts
+import * as vscode from 'vscode';
+import * as fs from 'node:fs/promises';
+import { glob } from 'glob';
+import * as csstree from 'css-tree';
+import type { CssNode, Rule, Atrule, Declaration } from 'css-tree';
+import { normalizeCssValue } from './normalize';
 
 export type TokenHit = {
-  name: string;
-  value: string;
-  file: string;
-  offset: number;
-  selector?: string;
-  source?: "theme" | "root" | "scoped";
+  name: string;          // --color-primary
+  value: string;         // 原始值（如 #1E90FF）
+  file: string;          // 文件绝对路径
+  offset: number;        // 在文件中的字符偏移（用于跳转到定义）
+  selector?: string;     // 来源选择器，如 ':root' / 'html' / '[data-theme=dark]' / 'theme'
+  source?: 'theme' | 'root' | 'scoped';
 };
 
 export class TokenIndex {
-  private map = new Map<string, TokenHit[]>();
+  private map = new Map<string, TokenHit[]>(); // 归一化值 → 命中列表
   private ready = false;
+  private mtimes = new Map<string, number>();  // 文件 mtime 用于简单变更检测
 
-  isReady() {
-    return this.ready;
-  }
+  isReady() { return this.ready; }
 
   async build() {
     this.map.clear();
+    this.mtimes.clear();
     const files = await this.resolveSources();
     for (const f of files) await this.indexFile(f);
     this.ready = true;
   }
 
   async onFileChange(file: string) {
-    // 简单策略：重建该文件相关条目
+    // 简单增量：仅重建该文件的条目
     await this.removeFileEntries(file);
     await this.indexFile(file);
   }
 
-  findByValue(norm: string): TokenHit[] {
-    return this.map.get(norm) ?? [];
+  findByValue(normalized: string): TokenHit[] {
+    return this.map.get(normalized) ?? [];
   }
 
-  // ------------ internals -------------
+  // ---------- 内部实现 ----------
+
   private async resolveSources(): Promise<string[]> {
-    const cfg = vscode.workspace.getConfiguration("css-value2design-token");
-    const patterns: string[] = cfg.get("sources") ?? [];
-    const roots =
-      vscode.workspace.workspaceFolders?.map((f) => f.uri.fsPath) ?? [];
+    const cfg = vscode.workspace.getConfiguration('css-value2design-token');
+    const patterns: string[] = cfg.get('sources') ?? [];
+    const roots = vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath) ?? [];
     const set = new Set<string>();
     for (const root of roots) {
       for (const pat of patterns) {
-        for (const m of await glob(pat, { cwd: root, absolute: true }))
-          set.add(m);
+        const matches = await glob(pat, { cwd: root, absolute: true, nodir: true });
+        matches.forEach(m => set.add(m));
       }
     }
     return [...set];
@@ -56,21 +58,26 @@ export class TokenIndex {
 
   private async removeFileEntries(file: string) {
     for (const [k, arr] of this.map) {
-      const next = arr.filter((x) => x.file !== file);
+      const next = arr.filter(x => x.file !== file);
       if (next.length) this.map.set(k, next);
       else this.map.delete(k);
     }
+    this.mtimes.delete(file);
   }
 
   private async indexFile(file: string) {
     let css: string;
     try {
-      css = await fs.readFile(file, "utf8");
+      const st = await fs.stat(file);
+      const prev = this.mtimes.get(file) || 0;
+      if (prev && st.mtimeMs <= prev) return; // 无变更
+      css = await fs.readFile(file, 'utf8');
+      this.mtimes.set(file, st.mtimeMs);
     } catch {
       return;
     }
 
-    let ast;
+    let ast: csstree.CssNode;
     try {
       ast = csstree.parse(css, {
         positions: true,
@@ -78,124 +85,103 @@ export class TokenIndex {
         filename: file,
       });
     } catch {
-      // 解析失败直接跳过该文件
+      // 语法错误时跳过该文件
       return;
     }
 
-    // 遍历 AST，收集 @theme 块、:root/html/[data-theme] 规则中的自定义属性
+    // 深度遍历：单独处理 Atrule(@theme) 与 Rule(选择器规则)
     csstree.walk(ast, {
-      visit: "Rule", // 规则（选择器）
-      enter: (node: CssNode, item, list) => {
-        if (node.type === "Atrule") {
+      enter: (node: CssNode) => {
+        // 1) @theme {...}
+        if (node.type === 'Atrule' && (node as Atrule).name === 'theme') {
           const at = node as Atrule;
-          if (isThemeAtrule(at)) {
-            collectFromAtruleBlock(at, file, css, this.addHit);
-          } else if (
-            at.name === "media" ||
-            at.name === "supports" ||
-            at.name === "layer"
-          ) {
-            // 这些里面也可能嵌有 :root 等，继续让 walker 下钻
-          }
-        } else if (node.type === "Rule") {
+          if (!at.block) return;
+          at.block.children?.forEach(child => {
+            if (child.type === 'Declaration' && isCustomProp(child as Declaration)) {
+              this.addHitFromDecl(child as Declaration, file, 'theme');
+            }
+            // 容错：@theme 内部嵌套选择器（极少见）
+            if (child.type === 'Rule') {
+              const rule = child as Rule;
+              const selector = csstree.generate(rule.prelude).trim();
+              if (isAllowedSelector(selector)) {
+                collectFromRule(rule, selector, file, (h) => this.addHit(h));
+              }
+            }
+          });
+        }
+
+        // 2) 普通规则：:root / html / [data-theme=...] {...}
+        if (node.type === 'Rule') {
           const rule = node as Rule;
           const selector = csstree.generate(rule.prelude).trim();
           if (isAllowedSelector(selector)) {
-            collectFromRule(rule, selector, file, css, this.addHit);
+            collectFromRule(rule, selector, file, (h) => this.addHit(h));
           }
         }
       },
     });
   }
 
-  private addHit = (hit: TokenHit) => {
-    const norm = normalizeCssValue(hit.value);
+  private addHitFromDecl(decl: Declaration, file: string, source: string) {
+    const name = decl.property;                          // 如 --color-primary
+    const value = csstree.generate(decl.value).trim();   // 如 #1E90FF
+    const norm = normalizeCssValue(value);               // 归一化
     if (!norm) return;
+
+    const offset = decl.loc?.start.offset ?? 0;
+    const hit: TokenHit = {
+      name, value, file, offset,
+      selector: source,
+      source: source === 'theme' ? 'theme' : (source === ':root' || source === 'html' ? 'root' : 'scoped')
+    };
+
     const arr = this.map.get(norm) ?? [];
-    if (
-      !arr.some(
-        (x) =>
-          x.file === hit.file && x.name === hit.name && x.offset === hit.offset,
-      )
-    ) {
+    if (!arr.some(x => x.file === hit.file && x.name === hit.name && x.offset === hit.offset)) {
       arr.push(hit);
       this.map.set(norm, arr);
     }
-  };
+  }
+
+  private addHit(hit: TokenHit) {
+    const norm = normalizeCssValue(hit.value);
+    if (!norm) return;
+    const arr = this.map.get(norm) ?? [];
+    if (!arr.some(x => x.file === hit.file && x.name === hit.name && x.offset === hit.offset)) {
+      arr.push(hit);
+      this.map.set(norm, arr);
+    }
+  }
 }
 
-// ---------- helpers ----------
+// ---------- 辅助函数 ----------
 
-// 判断 @theme（Tailwind v4）
-function isThemeAtrule(at: Atrule): boolean {
-  return at.name === "theme";
-}
-
+// 允许被索引的选择器白名单：:root、html、[data-theme="..."]（包含组合、逗号并列）
 function isAllowedSelector(selector: string): boolean {
-  // 可按需扩展白名单
-  // :root、html、[data-theme="..."] 及其逗号并列形式
-  // 也允许类似 html[data-theme="dark"]
-  const parts = selector.split(",").map((s) => s.trim());
-  return parts.every(
-    (s) =>
-      /^:root\b/.test(s) ||
-      /^html\b/.test(s) ||
-      /^\[data-theme(?:=|~|\^|\$|\*|\|)?/i.test(s) ||
-      /^html\[data-theme/i.test(s),
+  // 多个选择器并列时全部检查
+  const parts = selector.split(',').map(s => s.trim());
+  return parts.every(s =>
+    /^:root(\b|$)/.test(s) ||
+    /^html(\b|$)/.test(s) ||
+    /\[data-theme\b/i.test(s) ||                // [data-theme] / [data-theme="dark"]
+    /^html\[data-theme\b/i.test(s)              // html[data-theme="dark"]
   );
 }
 
-function collectFromAtruleBlock(
-  at: Atrule,
-  file: string,
-  css: string,
-  add: (h: TokenHit) => void,
-) {
-  if (!at.block) return;
-  at.block.children?.forEach((child) => {
-    if (child.type === "Declaration") {
-      const decl = child as Declaration;
-      if (!isCustomProp(decl)) return;
-      const name = getPropName(decl);
-      const value = getValueRaw(decl);
-      const offset = decl.loc?.start.offset ?? 0;
-      add({ name, value, file, offset, source: "theme" });
-    } else if (child.type === "Rule") {
-      // 允许 @theme 内部再嵌套（极少见，但容错）
-      const selector = csstree.generate(child.prelude).trim();
-      if (isAllowedSelector(selector))
-        collectFromRule(child, selector, file, css, add);
-    }
-  });
+function isCustomProp(decl: Declaration): boolean {
+  return !!decl.property && decl.property.startsWith('--');
 }
 
-function collectFromRule(
-  rule: Rule,
-  selector: string,
-  file: string,
-  css: string,
-  add: (h: TokenHit) => void,
-) {
-  rule.block.children?.forEach((n) => {
-    if (n.type !== "Declaration") return;
+function collectFromRule(rule: Rule, selector: string, file: string, add: (h: TokenHit) => void) {
+  rule.block.children?.forEach(n => {
+    if (n.type !== 'Declaration') return;
     const decl = n as Declaration;
     if (!isCustomProp(decl)) return;
-    const name = getPropName(decl);
-    const value = getValueRaw(decl);
+    const name = decl.property;
+    const value = csstree.generate(decl.value).trim();
     const offset = decl.loc?.start.offset ?? 0;
-    const source =
-      selector === ":root" || selector === "html" ? "root" : "scoped";
+    const source: TokenHit['source'] =
+      selector === ':root' || selector === 'html' ? 'root' : 'scoped';
     add({ name, value, file, offset, selector, source });
   });
-}
-
-function isCustomProp(decl: Declaration) {
-  return decl.property.startsWith("--");
-}
-function getPropName(decl: Declaration) {
-  return decl.property; // 已含 --
-}
-function getValueRaw(decl: Declaration) {
-  // 用 csstree 生成标准字符串；比直接 slice 文本更稳
-  return csstree.generate(decl.value).trim();
 }

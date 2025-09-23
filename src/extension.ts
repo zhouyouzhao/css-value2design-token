@@ -3,7 +3,6 @@ import * as vscode from "vscode";
 import { TokenIndex } from "./core/indexer";
 import { normalizeCssValue } from "./core/normalize";
 import { replaceWithVar } from "./core/replace";
-console.log("extension.ts");
 
 let index = new TokenIndex();
 
@@ -28,6 +27,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         if (!editor) return;
         const range = editor.document.getWordRangeAtPosition(
           editor.selection.active,
+          // 光标点在某个值里面但没有手动选中内容，自动选中整个值
           /[#\w\-\(\),.%\s]+/,
         );
         if (!range) return;
