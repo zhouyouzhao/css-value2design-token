@@ -13,6 +13,8 @@ yarn-error.log*
 selenium-debug.log*
 .history/
 demo/
+out/
+.vscode-test/
 
 # VS Code Extension Package Files
 *.vsix

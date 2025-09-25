@@ -52,6 +52,11 @@
             "src/**/*.css"
           ],
           "description": "文件路径 (glob)，用于扫描 css 中的 design tokens"
+        },
+        "css-value2design-token.index.classWhitelist": {
+          "type": "array",
+          "default": [],
+          "description": "class 白名单，用于扫描 css 中的 design tokens"
         }
       }
     }
@@ -70,7 +75,10 @@
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "test:indexer": "pnpm run compile-tests && npx vscode-test --extensionDevelopmentPath=. --extensionTestsPath=out/test/indexer.test.js",
+    "test:unit": "pnpm run test:indexer",
+    "test:watch": "pnpm run compile-tests && npx vscode-test --extensionDevelopmentPath=. --extensionTestsPath=out/test --watch"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

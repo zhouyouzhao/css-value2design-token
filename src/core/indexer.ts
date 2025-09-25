@@ -56,6 +56,12 @@ export class TokenIndex {
     return [...set];
   }
 
+  private getClassWhitelist(): RegExp[] {
+    const cfg = vscode.workspace.getConfiguration('css-value2design-token');
+    const patterns: string[] = cfg.get('index.classWhitelist') ?? [];
+    return patterns.map(pattern => new RegExp(pattern));
+  }
+
   private async removeFileEntries(file: string) {
     for (const [k, arr] of this.map) {
       const next = arr.filter(x => x.file !== file);
@@ -89,6 +95,9 @@ export class TokenIndex {
       return;
     }
 
+    // 获取类白名单配置
+    const classWhitelist = this.getClassWhitelist();
+
     // 深度遍历：单独处理 Atrule(@theme) 与 Rule(选择器规则)
     csstree.walk(ast, {
       enter: (node: CssNode) => {
@@ -104,18 +113,18 @@ export class TokenIndex {
             if (child.type === 'Rule') {
               const rule = child as Rule;
               const selector = csstree.generate(rule.prelude).trim();
-              if (isAllowedSelector(selector)) {
+              if (isAllowedSelector(selector, classWhitelist)) {
                 collectFromRule(rule, selector, file, (h) => this.addHit(h));
               }
             }
           });
         }
 
-        // 2) 普通规则：:root / html / [data-theme=...] {...}
+        // 2) 普通规则：:root / html / [data-theme=...] / 白名单类 {...}
         if (node.type === 'Rule') {
           const rule = node as Rule;
           const selector = csstree.generate(rule.prelude).trim();
-          if (isAllowedSelector(selector)) {
+          if (isAllowedSelector(selector, classWhitelist)) {
             collectFromRule(rule, selector, file, (h) => this.addHit(h));
           }
         }
@@ -156,16 +165,23 @@ export class TokenIndex {
 
 // ---------- 辅助函数 ----------
 
-// 允许被索引的选择器白名单：:root、html、[data-theme="..."]（包含组合、逗号并列）
-function isAllowedSelector(selector: string): boolean {
+// 允许被索引的选择器白名单：:root、html、[data-theme="..."]、以及配置的类白名单（包含组合、逗号并列）
+function isAllowedSelector(selector: string, classWhitelist: RegExp[] = []): boolean {
   // 多个选择器并列时全部检查
   const parts = selector.split(',').map(s => s.trim());
   return parts.every(s =>
     /^:root(\b|$)/.test(s) ||
     /^html(\b|$)/.test(s) ||
     /\[data-theme\b/i.test(s) ||                // [data-theme] / [data-theme="dark"]
-    /^html\[data-theme\b/i.test(s)              // html[data-theme="dark"]
+    /^html\[data-theme\b/i.test(s) ||           // html[data-theme="dark"]
+    isClassAllowed(s, classWhitelist)           // 检查类白名单
   );
+}
+
+// 检查选择器是否匹配类白名单
+function isClassAllowed(selector: string, classWhitelist: RegExp[]): boolean {
+  if (classWhitelist.length === 0) return false;
+  return classWhitelist.some(regex => regex.test(selector));
 }
 
 function isCustomProp(decl: Declaration): boolean {
