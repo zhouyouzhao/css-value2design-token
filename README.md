@@ -2,6 +2,11 @@
 
 ✨ A VS Code extension for Tailwind CSS v4 — select raw CSS values (#1E90FF, 16px, etc.), instantly replace them with design tokens (var(--color-primary)), and auto-create new tokens with smart naming when missing.
 
+## Important
+
+This extension only supports global design tokens (:root / @theme) and their theme overrides (e.g. .dark, [data-theme]).
+Variables defined outside this scope are treated as non-standard and will be ignored.
+
 ## Development
 
 ### Testing
