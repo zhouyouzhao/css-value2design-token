@@ -15,16 +15,25 @@ export type TokenHit = {
   source?: 'theme' | 'root' | 'scoped';
 };
 
+export type FileInfo = {
+  path: string;          // 文件绝对路径
+  comment: string;       // 文件顶部注释
+  tokenCount: number;    // 文件中token的数量
+  lastModified: number;  // 最后修改时间
+};
+
 export class TokenIndex {
   private map = new Map<string, TokenHit[]>(); // 归一化值 → 命中列表
   private ready = false;
   private mtimes = new Map<string, number>();  // 文件 mtime 用于简单变更检测
+  private fileInfos = new Map<string, FileInfo>(); // 文件路径 → 文件信息
 
   isReady() { return this.ready; }
 
   async build() {
     this.map.clear();
     this.mtimes.clear();
+    this.fileInfos.clear();
     const files = await this.resolveSources();
     for (const f of files) await this.indexFile(f);
     this.ready = true;
@@ -38,6 +47,18 @@ export class TokenIndex {
 
   findByValue(normalized: string): TokenHit[] {
     return this.map.get(normalized) ?? [];
+  }
+
+  getAllIndexedFiles(): string[] {
+    return Array.from(this.mtimes.keys());
+  }
+
+  getAllFileInfos(): FileInfo[] {
+    return Array.from(this.fileInfos.values());
+  }
+
+  getFileInfo(filePath: string): FileInfo | undefined {
+    return this.fileInfos.get(filePath);
   }
 
   // ---------- 内部实现 ----------
@@ -69,19 +90,25 @@ export class TokenIndex {
       else this.map.delete(k);
     }
     this.mtimes.delete(file);
+    this.fileInfos.delete(file);
   }
 
   private async indexFile(file: string) {
     let css: string;
+    let stat: any;
     try {
-      const st = await fs.stat(file);
+      stat = await fs.stat(file);
       const prev = this.mtimes.get(file) || 0;
-      if (prev && st.mtimeMs <= prev) return; // 无变更
+      if (prev && stat.mtimeMs <= prev) return; // 无变更
       css = await fs.readFile(file, 'utf8');
-      this.mtimes.set(file, st.mtimeMs);
+      this.mtimes.set(file, stat.mtimeMs);
     } catch {
       return;
     }
+
+    // 提取文件顶部注释
+    const comment = this.extractFileComment(css);
+    let tokenCount = 0;
 
     let ast: csstree.CssNode;
     try {
@@ -108,13 +135,17 @@ export class TokenIndex {
           at.block.children?.forEach(child => {
             if (child.type === 'Declaration' && isCustomProp(child as Declaration)) {
               this.addHitFromDecl(child as Declaration, file, 'theme');
+              tokenCount++;
             }
             // 容错：@theme 内部嵌套选择器（极少见）
             if (child.type === 'Rule') {
               const rule = child as Rule;
               const selector = csstree.generate(rule.prelude).trim();
               if (isAllowedSelector(selector, classWhitelist)) {
-                collectFromRule(rule, selector, file, (h) => this.addHit(h));
+                collectFromRule(rule, selector, file, (h) => {
+                  this.addHit(h);
+                  tokenCount++;
+                });
               }
             }
           });
@@ -125,10 +156,21 @@ export class TokenIndex {
           const rule = node as Rule;
           const selector = csstree.generate(rule.prelude).trim();
           if (isAllowedSelector(selector, classWhitelist)) {
-            collectFromRule(rule, selector, file, (h) => this.addHit(h));
+            collectFromRule(rule, selector, file, (h) => {
+              this.addHit(h);
+              tokenCount++;
+            });
           }
         }
       },
+    });
+
+    // 保存文件信息
+    this.fileInfos.set(file, {
+      path: file,
+      comment,
+      tokenCount,
+      lastModified: stat.mtimeMs
     });
   }
 
@@ -160,6 +202,63 @@ export class TokenIndex {
       arr.push(hit);
       this.map.set(norm, arr);
     }
+  }
+
+  private extractFileComment(css: string): string {
+    // 提取文件开头的注释
+    const lines = css.split('\n');
+    const commentLines: string[] = [];
+    let inBlockComment = false;
+    let foundContent = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      // 跳过空行
+      if (!trimmed) {
+        if (foundContent) break;
+        continue;
+      }
+
+      // 处理块注释 /* ... */
+      if (trimmed.startsWith('/*')) {
+        inBlockComment = true;
+        foundContent = true;
+        let content = trimmed.substring(2);
+        if (content.endsWith('*/')) {
+          content = content.substring(0, content.length - 2);
+          inBlockComment = false;
+        }
+        commentLines.push(content.trim());
+        continue;
+      }
+
+      if (inBlockComment) {
+        let content = trimmed;
+        if (content.endsWith('*/')) {
+          content = content.substring(0, content.length - 2);
+          inBlockComment = false;
+        }
+        commentLines.push(content.trim());
+        continue;
+      }
+
+      // 处理单行注释 //
+      if (trimmed.startsWith('//')) {
+        foundContent = true;
+        commentLines.push(trimmed.substring(2).trim());
+        continue;
+      }
+
+      // 如果遇到非注释内容，停止提取
+      break;
+    }
+
+    return commentLines
+      .filter(line => line.length > 0)
+      .join(' ')
+      .substring(0, 100) // 限制长度
+      .trim();
   }
 }
 

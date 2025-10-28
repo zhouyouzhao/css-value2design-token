@@ -1,0 +1,20 @@
+// 组件样式库 - 包含按钮、表单等组件的样式定义
+
+:root {
+  --button-padding: 12px 24px;
+  --button-border-radius: 6px;
+  --form-input-height: 40px;
+}
+
+.button-theme {
+  --button-bg-primary: #007ACC;
+  --button-bg-secondary: #6C757D;
+  --button-text-color: #FFFFFF;
+}
+
+/* 响应式断点定义 */
+@theme {
+  --breakpoint-mobile: 768px;
+  --breakpoint-tablet: 1024px;
+  --breakpoint-desktop: 1200px;
+}

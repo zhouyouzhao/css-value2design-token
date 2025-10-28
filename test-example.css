@@ -1,0 +1,35 @@
+/* 
+ * 主题颜色和样式定义文件
+ * 包含了项目的主要设计token定义
+ * 支持亮色和暗色主题切换
+ */
+
+:root {
+  --color-primary: #1E90FF;
+  --color-secondary: #32CD32;
+  --spacing-small: 8px;
+  --spacing-medium: 16px;
+  --border-radius: 4px;
+}
+
+@theme {
+  --color-accent: #FF6B6B;
+  --font-size-large: 24px;
+}
+
+.dark {
+  --color-primary: #4A90E2;
+  --color-background: #1a1a1a;
+}
+
+/* 在这里测试功能：
+   1. 选中 #1E90FF 然后右键选择 "Find Design Token"
+   2. 选中 16px 然后右键选择 "Find Design Token"
+   3. 选中一个不存在的值如 #999999 来测试文件浏览功能
+*/
+
+.test-class {
+  color: #1E90FF;
+  margin: 16px;
+  background: #999999; /* 这个值不存在对应的token */
+}

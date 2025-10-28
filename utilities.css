@@ -1,0 +1,13 @@
+:root {
+  --shadow-small: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --shadow-medium: 0 4px 6px rgba(0, 0, 0, 0.16);
+  --shadow-large: 0 10px 25px rgba(0, 0, 0, 0.19);
+}
+
+.spacing-utilities {
+  --margin-xs: 4px;
+  --margin-sm: 8px;
+  --margin-md: 16px;
+  --margin-lg: 24px;
+  --margin-xl: 32px;
+}
