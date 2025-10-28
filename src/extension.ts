@@ -45,37 +45,43 @@ export async function activate(ctx: vscode.ExtensionContext) {
           return;
         }
 
-        const items = hits.map((h, index) => ({
-          label: `${h.name}`,
-          description: `$(go-to-file) ${vscode.workspace.asRelativePath(h.file)}`,
-          detail: `${h.value} - 按 Ctrl+Enter 跳转到定义`,
+        // 创建自定义QuickPick以支持按钮
+        const quickPick = vscode.window.createQuickPick();
+        
+        // 为每个token创建item，并添加跳转按钮
+        quickPick.items = hits.map((h) => ({
+          label: h.name,
+          description: vscode.workspace.asRelativePath(h.file),
+          detail: h.value,
+          buttons: [{
+            iconPath: new vscode.ThemeIcon('go-to-file'),
+            tooltip: '跳转到定义'
+          }],
           tokenHit: h
-        }));
+        } as any));
 
-        const pick = await vscode.window.showQuickPick(items, { 
-          placeHolder: `匹配到 ${hits.length} 个 Token (按 Ctrl+Enter 跳转到定义)`,
-          onDidSelectItem: (item: any) => {
-            // 这里可以添加预览功能，但目前我们先保持简单
+        quickPick.placeholder = `匹配到 ${hits.length} 个 Token (回车替换，点击图标跳转到定义)`;
+
+        // 处理选择（回车）- 替换
+        quickPick.onDidAccept(() => {
+          const selected = quickPick.activeItems[0] as any;
+          if (selected) {
+            quickPick.hide();
+            editor.edit((edit) =>
+              edit.replace(range, replaceWithVar(selected.label)),
+            );
           }
         });
-        if (!pick) return;
 
-        // 检查是否按了 Ctrl+Enter (这需要通过其他方式实现)
-        // 为了简化，我们添加一个选择操作的对话框
-        const action = await vscode.window.showQuickPick([
-          { label: "$(symbol-variable) 替换为变量", action: "replace" },
-          { label: "$(go-to-file) 跳转到定义", action: "goto" }
-        ], { placeHolder: "选择操作" });
+        // 处理按钮点击 - 跳转
+        quickPick.onDidTriggerItemButton(async (e) => {
+          const item = e.item as any;
+          quickPick.hide();
+          await jumpToTokenDefinition(item.tokenHit);
+        });
 
-        if (!action) return;
-
-        if (action.action === "goto") {
-          await jumpToTokenDefinition(pick.tokenHit);
-        } else {
-          await editor.edit((edit) =>
-            edit.replace(range, replaceWithVar(pick.label)),
-          );
-        }
+        quickPick.onDidHide(() => quickPick.dispose());
+        quickPick.show();
       },
     ),
   );
