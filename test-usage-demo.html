@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>@alias 功能演示</title>
+  <style>
+    /* 
+     * 在这个文件中测试 @alias 功能
+     * 
+     * 步骤：
+     * 1. 确保 test-alias-example.css 在配置的 sources 中被索引
+     * 2. 选中下面样式中的值（如 20px、16px 等）
+     * 3. 右键选择 "Find Design Token" 或使用快捷键
+     * 4. 在 picker 中会看到匹配的 token 及其别名
+     * 5. 可以选择：
+     *    - 回车：替换为 var(--spacing-xl)
+     *    - 点击别名图标：替换为 xl
+     */
+    
+    .container {
+      /* 选中 20px，应该匹配到 --spacing-xl (别名: xl) */
+      padding: 20px;
+      
+      /* 选中 16px，应该匹配到 --spacing-lg (别名: lg) */
+      margin: 16px;
+      
+      /* 选中 12px，应该匹配到 --spacing-md (别名: md) */
+      gap: 12px;
+      
+      /* 选中 8px，应该匹配到 --spacing-sm (别名: sm) */
+      border-radius: 8px;
+    }
+    
+    .button {
+      /* 选中 #1E90FF，应该匹配到 --color-primary (别名: primary) */
+      background-color: #1E90FF;
+      
+      /* 选中 #32CD32，应该匹配到 --color-secondary (别名: secondary) */
+      border-color: #32CD32;
+      
+      /* 选中 #FF6B6B，应该匹配到 --color-accent (无别名) */
+      color: #FF6B6B;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <button class="button">测试按钮</button>
+  </div>
+  
+  <!-- Tailwind 工具类使用场景 -->
+  <div class="text-[20px] padding-[16px] margin-[12px]">
+    <!--
+      使用场景：
+      1. 选中 [20px] 中的 20px
+      2. 使用别名替换为 xl
+      3. 最终效果：text-[20px] → text-xl
+      
+      同理：
+      - padding-[16px] → padding-lg
+      - margin-[12px] → margin-md
+    -->
+    Tailwind 工具类示例
+  </div>
+</body>
+</html>
+

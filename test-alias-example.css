@@ -1,0 +1,71 @@
+/* 
+ * 别名测试文件
+ * 测试 @alias 和 @pattern 注释功能
+ */
+
+:root {
+  /* Tailwind CSS 方括号模式 - 间距 */
+  
+  // @alias xl
+  // @pattern [%]
+  --spacing-xl: 20px;
+  
+  // @alias lg
+  // @pattern [%]
+  --spacing-lg: 16px;
+  
+  // @alias md
+  // @pattern [%]
+  --spacing-md: 12px;
+  
+  // @alias sm
+  // @pattern [%]
+  --spacing-sm: 8px;
+  
+  /* 颜色别名 - 带方括号模式 */
+  
+  /* @alias primary */
+  /* @pattern [%] */
+  --color-primary: #1E90FF;
+  
+  /* @alias secondary */
+  /* @pattern [%] */
+  --color-secondary: #32CD32;
+  
+  /* 无模式的别名（只替换值本身） */
+  // @alias accent
+  --color-accent: #FF6B6B;
+  
+  /* var() 函数模式示例 */
+  // @alias bg-dark
+  // @pattern var(%%)
+  --bg-color-dark: #1a1a1a;
+}
+
+/* 
+ * 使用测试：
+ * 
+ * 示例 1：Tailwind 方括号（有 @pattern [%]）
+ * ----------------------------------------
+ * 代码：text-[20px]
+ * 选中：20px
+ * 操作：点击别名图标
+ * 结果：text-xl  ← 方括号也被替换了！
+ * 
+ * 示例 2：普通别名（无 @pattern）
+ * ----------------------------------------
+ * 代码：color: #FF6B6B
+ * 选中：#FF6B6B
+ * 操作：点击别名图标
+ * 结果：color: accent  ← 只替换值本身
+ * 
+ * 示例 3：var() 函数（@pattern var(%%)）
+ * ----------------------------------------
+ * 代码：background: var(#1a1a1a)
+ * 选中：#1a1a1a
+ * 操作：点击别名图标
+ * 结果：background: bg-dark  ← var() 也被替换了！
+ * 
+ * 回车键：始终替换为 var(--token-name)
+ */
+

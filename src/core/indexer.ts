@@ -13,6 +13,8 @@ export type TokenHit = {
   offset: number;        // 在文件中的字符偏移（用于跳转到定义）
   selector?: string;     // 来源选择器，如 ':root' / 'html' / '[data-theme=dark]' / 'theme'
   source?: 'theme' | 'root' | 'scoped';
+  alias?: string;        // 别名，从 @alias 注释中提取
+  pattern?: string;      // 替换模式，从 @pattern 注释中提取（% 代表选中的值）
 };
 
 export type FileInfo = {
@@ -134,7 +136,8 @@ export class TokenIndex {
           if (!at.block) return;
           at.block.children?.forEach(child => {
             if (child.type === 'Declaration' && isCustomProp(child as Declaration)) {
-              this.addHitFromDecl(child as Declaration, file, 'theme');
+              const { alias, pattern } = this.extractAliasAndPattern(css, child as Declaration);
+              this.addHitFromDecl(child as Declaration, file, 'theme', alias, pattern);
               tokenCount++;
             }
             // 容错：@theme 内部嵌套选择器（极少见）
@@ -142,7 +145,7 @@ export class TokenIndex {
               const rule = child as Rule;
               const selector = csstree.generate(rule.prelude).trim();
               if (isAllowedSelector(selector, classWhitelist)) {
-                collectFromRule(rule, selector, file, (h) => {
+                collectFromRule(rule, selector, file, css, (h) => {
                   this.addHit(h);
                   tokenCount++;
                 });
@@ -156,7 +159,7 @@ export class TokenIndex {
           const rule = node as Rule;
           const selector = csstree.generate(rule.prelude).trim();
           if (isAllowedSelector(selector, classWhitelist)) {
-            collectFromRule(rule, selector, file, (h) => {
+            collectFromRule(rule, selector, file, css, (h) => {
               this.addHit(h);
               tokenCount++;
             });
@@ -174,7 +177,7 @@ export class TokenIndex {
     });
   }
 
-  private addHitFromDecl(decl: Declaration, file: string, source: string) {
+  private addHitFromDecl(decl: Declaration, file: string, source: string, alias?: string, pattern?: string) {
     const name = decl.property;                          // 如 --color-primary
     const value = csstree.generate(decl.value).trim();   // 如 #1E90FF
     const norm = normalizeCssValue(value);               // 归一化
@@ -184,7 +187,9 @@ export class TokenIndex {
     const hit: TokenHit = {
       name, value, file, offset,
       selector: source,
-      source: source === 'theme' ? 'theme' : (source === ':root' || source === 'html' ? 'root' : 'scoped')
+      source: source === 'theme' ? 'theme' : (source === ':root' || source === 'html' ? 'root' : 'scoped'),
+      alias,
+      pattern
     };
 
     const arr = this.map.get(norm) ?? [];
@@ -260,6 +265,70 @@ export class TokenIndex {
       .substring(0, 100) // 限制长度
       .trim();
   }
+
+  private extractAlias(css: string, decl: Declaration): string | undefined {
+    const { alias } = this.extractAliasAndPattern(css, decl);
+    return alias;
+  }
+
+  private extractPattern(css: string, decl: Declaration): string | undefined {
+    const { pattern } = this.extractAliasAndPattern(css, decl);
+    return pattern;
+  }
+
+  private extractAliasAndPattern(css: string, decl: Declaration): { alias?: string; pattern?: string } {
+    // 从声明前面的注释中提取 @alias 和 @pattern
+    if (!decl.loc) return {};
+    
+    const lines = css.split('\n');
+    const declLine = decl.loc.start.line - 1; // 转换为0-based索引
+    
+    let alias: string | undefined;
+    let pattern: string | undefined;
+    
+    // 向上查找注释
+    for (let i = declLine - 1; i >= 0; i--) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      
+      // 如果遇到空行，继续向上查找
+      if (!trimmed) continue;
+      
+      // 检查单行注释
+      if (trimmed.startsWith('//')) {
+        // 提取 @alias
+        const aliasMatch = trimmed.match(/\/\/\s*@alias\s+(\S+)/);
+        if (aliasMatch && !alias) alias = aliasMatch[1];
+        
+        // 提取 @pattern
+        const patternMatch = trimmed.match(/\/\/\s*@pattern\s+(.+)/);
+        if (patternMatch && !pattern) pattern = patternMatch[1].trim();
+        
+        continue;
+      }
+      
+      // 检查块注释
+      if (trimmed.includes('@alias') || trimmed.includes('@pattern')) {
+        const aliasMatch = trimmed.match(/@alias\s+(\S+)/);
+        if (aliasMatch && !alias) alias = aliasMatch[1];
+        
+        const patternMatch = trimmed.match(/@pattern\s+(.+?)(?:\*\/|$)/);
+        if (patternMatch && !pattern) pattern = patternMatch[1].trim();
+        
+        continue;
+      }
+      
+      // 如果是注释行，继续查找
+      if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.endsWith('*/') || trimmed.startsWith('*')) {
+        continue;
+      }
+      
+      // 如果遇到其他非注释内容，停止查找
+      break;
+    }
+    
+    return { alias, pattern };
+  }
 }
 
 // ---------- 辅助函数 ----------
@@ -287,7 +356,7 @@ function isCustomProp(decl: Declaration): boolean {
   return !!decl.property && decl.property.startsWith('--');
 }
 
-function collectFromRule(rule: Rule, selector: string, file: string, add: (h: TokenHit) => void) {
+function collectFromRule(rule: Rule, selector: string, file: string, css: string, add: (h: TokenHit) => void) {
   rule.block.children?.forEach(n => {
     if (n.type !== 'Declaration') return;
     const decl = n as Declaration;
@@ -297,6 +366,64 @@ function collectFromRule(rule: Rule, selector: string, file: string, add: (h: To
     const offset = decl.loc?.start.offset ?? 0;
     const source: TokenHit['source'] =
       selector === ':root' || selector === 'html' ? 'root' : 'scoped';
-    add({ name, value, file, offset, selector, source });
+    
+    // 提取别名和模式
+    const { alias, pattern } = extractAliasAndPatternFromDecl(css, decl);
+    
+    add({ name, value, file, offset, selector, source, alias, pattern });
   });
+}
+
+function extractAliasAndPatternFromDecl(css: string, decl: Declaration): { alias?: string; pattern?: string } {
+  // 从声明前面的注释中提取 @alias 和 @pattern
+  if (!decl.loc) return {};
+  
+  const lines = css.split('\n');
+  const declLine = decl.loc.start.line - 1; // 转换为0-based索引
+  
+  let alias: string | undefined;
+  let pattern: string | undefined;
+  
+  // 向上查找注释
+  for (let i = declLine - 1; i >= 0; i--) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    
+    // 如果遇到空行，继续向上查找
+    if (!trimmed) continue;
+    
+    // 检查单行注释
+    if (trimmed.startsWith('//')) {
+      // 提取 @alias
+      const aliasMatch = trimmed.match(/\/\/\s*@alias\s+(\S+)/);
+      if (aliasMatch && !alias) alias = aliasMatch[1];
+      
+      // 提取 @pattern
+      const patternMatch = trimmed.match(/\/\/\s*@pattern\s+(.+)/);
+      if (patternMatch && !pattern) pattern = patternMatch[1].trim();
+      
+      continue;
+    }
+    
+    // 检查块注释
+    if (trimmed.includes('@alias') || trimmed.includes('@pattern')) {
+      const aliasMatch = trimmed.match(/@alias\s+(\S+)/);
+      if (aliasMatch && !alias) alias = aliasMatch[1];
+      
+      const patternMatch = trimmed.match(/@pattern\s+(.+?)(?:\*\/|$)/);
+      if (patternMatch && !pattern) pattern = patternMatch[1].trim();
+      
+      continue;
+    }
+    
+    // 如果是注释行，继续查找
+    if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.endsWith('*/') || trimmed.startsWith('*')) {
+      continue;
+    }
+    
+    // 如果遇到其他非注释内容，停止查找
+    break;
+  }
+  
+  return { alias, pattern };
 }
