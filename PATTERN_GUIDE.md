@@ -6,6 +6,13 @@
 
 ## 基本语法
 
+**推荐格式（一行）：**
+```css
+// @alias <别名> <模式>
+--token-name: <值>;
+```
+
+**兼容格式（两行）：**
 ```css
 // @alias <别名>
 // @pattern <模式>
@@ -14,6 +21,7 @@
 
 - `%` 代表选中的值
 - 模式定义了替换时需要包含的前后文本
+- 模式是可选的，不写模式则只替换值本身
 
 ## 使用场景
 
@@ -21,8 +29,7 @@
 
 **定义：**
 ```css
-// @alias xl
-// @pattern [%]
+// @alias xl [%]
 --spacing-xl: 20px;
 ```
 
@@ -36,15 +43,14 @@
 ```
 
 **解释：**
-- `@pattern [%]` 表示：如果选中的值在 `[...]` 中
+- `[%]` 表示：如果选中的值在 `[...]` 中
 - 替换时会把整个 `[20px]` 替换为 `xl`
 
 ### 2. CSS 变量函数
 
 **定义：**
 ```css
-/* @alias primary */
-/* @pattern var(%%) */
+/* @alias primary var(%%) */
 --color-primary: #1E90FF;
 ```
 
@@ -62,15 +68,14 @@
 ```
 
 **解释：**
-- `@pattern var(%%)` 表示：如果选中的值在 `var(...)` 中
+- `var(%%)` 表示：如果选中的值在 `var(...)` 中
 - 替换时会把整个 `var(#1E90FF)` 替换为 `primary`
 
 ### 3. 函数调用语法
 
 **定义：**
 ```css
-// @alias ease
-// @pattern cubic-bezier(%)
+// @alias ease cubic-bezier(%)
 --timing-ease: 0.25, 0.1, 0.25, 1;
 ```
 
@@ -116,28 +121,26 @@
 
 ### 常用模式
 
-| 框架/场景 | 模式 | 示例 |
-|----------|------|------|
-| Tailwind CSS | `[%]` | `text-[20px]` → `text-xl` |
-| CSS 变量 | `var(%%)` | `var(#1E90FF)` → `primary` |
-| calc() | `calc(%)` | `calc(100% - 20px)` → `full-minus-xl` |
-| RGB 函数 | `rgb(%)` | `rgb(30, 144, 255)` → `primary` |
-| 括号包裹 | `(%)` | `(20px)` → `xl` |
-| 引号包裹 | `"%"` | `"20px"` → `"xl"` |
+| 框架/场景 | 定义示例 | 使用效果 |
+|----------|---------|---------|
+| Tailwind CSS | `// @alias xl [%]` | `text-[20px]` → `text-xl` |
+| CSS 变量 | `// @alias primary var(%%)` | `var(#1E90FF)` → `primary` |
+| calc() | `// @alias full calc(%)` | `calc(100%)` → `full` |
+| RGB 函数 | `// @alias primary rgb(%)` | `rgb(30,144,255)` → `primary` |
+| 括号包裹 | `// @alias xl (%)` | `(20px)` → `xl` |
+| 引号包裹 | `// @alias xl "%"` | `"20px"` → `"xl"` |
 
 ### 复杂模式
 
 **嵌套函数：**
 ```css
-// @alias shadow-sm
-// @pattern drop-shadow(%)
+// @alias shadow-sm drop-shadow(%)
 --shadow-small: 0 1px 2px rgba(0,0,0,0.1);
 ```
 
 **多层包裹：**
 ```css
-// @alias safe-area
-// @pattern calc(env(%))
+// @alias safe-area calc(env(%))
 --safe-area-top: constant(safe-area-inset-top);
 ```
 
@@ -177,23 +180,27 @@
 1. **明确使用场景**
    ```css
    // Tailwind 专用
-   // @alias xl
-   // @pattern [%]
+   // @alias xl [%]
    --spacing-xl: 20px;
    ```
 
-2. **一个 token 一个模式**
+2. **一行定义，简洁明了**
    ```css
-   // 不要在同一个 token 上定义多个 @pattern
+   // ✅ 推荐：一行完成
+   // @alias xl [%]
+   
+   // ⚠️ 可以但不推荐：分两行
+   // @alias xl
+   // @pattern [%]
    ```
 
 3. **模式要具体**
    ```css
-   // 好：明确的方括号
-   // @pattern [%]
+   // ✅ 好：明确的方括号
+   // @alias xl [%]
    
-   // 避免：过于宽泛
-   // @pattern %
+   // ❌ 避免：过于宽泛
+   // @alias xl %
    ```
 
 ### ❌ 常见错误
@@ -201,24 +208,28 @@
 1. **忘记 % 占位符**
    ```css
    // ❌ 错误：没有 %
-   // @pattern []
+   // @alias xl []
    
    // ✅ 正确
-   // @pattern [%]
+   // @alias xl [%]
    ```
 
 2. **模式不匹配实际使用**
    ```css
-   // @pattern [%]
+   // @alias primary [%]
    --color: #1E90FF;
    
    /* 实际使用 */
-   color: #1E90FF;  /* 不在方括号中，模式不匹配 */
+   color: #1E90FF;  /* 不在方括号中，模式不匹配，只替换值 */
    ```
 
-3. **特殊字符未考虑**
+3. **别名中包含空格**
    ```css
-   // @pattern var(%%)  ← 需要转义括号？不需要，代码会自动处理
+   // ❌ 错误：别名有空格
+   // @alias text xl [%]
+   
+   // ✅ 正确：使用连字符
+   // @alias text-xl [%]
    ```
 
 ## 高级技巧
@@ -228,8 +239,7 @@
 ```css
 :root {
   /* Tailwind 场景 */
-  // @alias xl
-  // @pattern [%]
+  // @alias xl [%]
   --spacing-xl: 20px;
   
   /* 普通 CSS 场景 */
@@ -247,24 +257,22 @@
 只有当值在特定上下文中才使用别名：
 
 ```css
-// @alias primary
-// @pattern [%]
+// @alias primary [%]
 --color-primary: #1E90FF;
 ```
 
 - `bg-[#1E90FF]` → 匹配模式 → `bg-primary`
-- `color: #1E90FF` → 不匹配模式 → `color: #1E90FF`（不替换）
+- `color: #1E90FF` → 不匹配模式 → 只替换值为 `primary`
 
 ### 3. 组合使用
 
 ```css
-// Tailwind 工具类别名
-// @alias xl
-// @pattern [%]
+// Tailwind 工具类别名（有模式）
+// @alias xl [%]
 --size-xl: 20px;
 
-// 同时也是普通 CSS 变量
-// 回车替换会得到 var(--size-xl)
+// 点击别名按钮：根据上下文智能替换
+// 回车键：始终替换为 var(--size-xl)
 ```
 
 ## 测试建议

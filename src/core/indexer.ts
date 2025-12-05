@@ -277,7 +277,11 @@ export class TokenIndex {
   }
 
   private extractAliasAndPattern(css: string, decl: Declaration): { alias?: string; pattern?: string } {
-    // 从声明前面的注释中提取 @alias 和 @pattern
+    // 从声明前面的注释中提取 @alias 和可选的 pattern
+    // 支持两种格式：
+    // 1. // @alias xl [%]  (一行，推荐)
+    // 2. // @alias xl      (单独一行)
+    //    // @pattern [%]   (单独一行)
     if (!decl.loc) return {};
     
     const lines = css.split('\n');
@@ -296,26 +300,53 @@ export class TokenIndex {
       
       // 检查单行注释
       if (trimmed.startsWith('//')) {
-        // 提取 @alias
-        const aliasMatch = trimmed.match(/\/\/\s*@alias\s+(\S+)/);
-        if (aliasMatch && !alias) alias = aliasMatch[1];
+        // 优先匹配新格式：// @alias xl [%]
+        const combinedMatch = trimmed.match(/\/\/\s*@alias\s+(\S+)\s+(.+)/);
+        if (combinedMatch && !alias) {
+          alias = combinedMatch[1];
+          pattern = combinedMatch[2].trim();
+          continue;
+        }
         
-        // 提取 @pattern
+        // 兼容旧格式：// @alias xl
+        const aliasMatch = trimmed.match(/\/\/\s*@alias\s+(\S+)$/);
+        if (aliasMatch && !alias) {
+          alias = aliasMatch[1];
+          continue;
+        }
+        
+        // 兼容旧格式：// @pattern [%]
         const patternMatch = trimmed.match(/\/\/\s*@pattern\s+(.+)/);
-        if (patternMatch && !pattern) pattern = patternMatch[1].trim();
+        if (patternMatch && !pattern) {
+          pattern = patternMatch[1].trim();
+          continue;
+        }
         
         continue;
       }
       
       // 检查块注释
-      if (trimmed.includes('@alias') || trimmed.includes('@pattern')) {
+      if (trimmed.includes('@alias')) {
+        // 新格式：/* @alias xl [%] */
+        const combinedMatch = trimmed.match(/@alias\s+(\S+)\s+(.+?)(?:\*\/|$)/);
+        if (combinedMatch && !alias) {
+          alias = combinedMatch[1];
+          pattern = combinedMatch[2].trim().replace(/\*\/$/, '').trim();
+          continue;
+        }
+        
+        // 旧格式：/* @alias xl */
         const aliasMatch = trimmed.match(/@alias\s+(\S+)/);
-        if (aliasMatch && !alias) alias = aliasMatch[1];
-        
+        if (aliasMatch && !alias) {
+          alias = aliasMatch[1];
+        }
+      }
+      
+      if (trimmed.includes('@pattern')) {
         const patternMatch = trimmed.match(/@pattern\s+(.+?)(?:\*\/|$)/);
-        if (patternMatch && !pattern) pattern = patternMatch[1].trim();
-        
-        continue;
+        if (patternMatch && !pattern) {
+          pattern = patternMatch[1].trim();
+        }
       }
       
       // 如果是注释行，继续查找
@@ -375,7 +406,11 @@ function collectFromRule(rule: Rule, selector: string, file: string, css: string
 }
 
 function extractAliasAndPatternFromDecl(css: string, decl: Declaration): { alias?: string; pattern?: string } {
-  // 从声明前面的注释中提取 @alias 和 @pattern
+  // 从声明前面的注释中提取 @alias 和可选的 pattern
+  // 支持两种格式：
+  // 1. // @alias xl [%]  (一行，推荐)
+  // 2. // @alias xl      (单独一行)
+  //    // @pattern [%]   (单独一行)
   if (!decl.loc) return {};
   
   const lines = css.split('\n');
@@ -394,26 +429,53 @@ function extractAliasAndPatternFromDecl(css: string, decl: Declaration): { alias
     
     // 检查单行注释
     if (trimmed.startsWith('//')) {
-      // 提取 @alias
-      const aliasMatch = trimmed.match(/\/\/\s*@alias\s+(\S+)/);
-      if (aliasMatch && !alias) alias = aliasMatch[1];
+      // 优先匹配新格式：// @alias xl [%]
+      const combinedMatch = trimmed.match(/\/\/\s*@alias\s+(\S+)\s+(.+)/);
+      if (combinedMatch && !alias) {
+        alias = combinedMatch[1];
+        pattern = combinedMatch[2].trim();
+        continue;
+      }
       
-      // 提取 @pattern
+      // 兼容旧格式：// @alias xl
+      const aliasMatch = trimmed.match(/\/\/\s*@alias\s+(\S+)$/);
+      if (aliasMatch && !alias) {
+        alias = aliasMatch[1];
+        continue;
+      }
+      
+      // 兼容旧格式：// @pattern [%]
       const patternMatch = trimmed.match(/\/\/\s*@pattern\s+(.+)/);
-      if (patternMatch && !pattern) pattern = patternMatch[1].trim();
+      if (patternMatch && !pattern) {
+        pattern = patternMatch[1].trim();
+        continue;
+      }
       
       continue;
     }
     
     // 检查块注释
-    if (trimmed.includes('@alias') || trimmed.includes('@pattern')) {
+    if (trimmed.includes('@alias')) {
+      // 新格式：/* @alias xl [%] */
+      const combinedMatch = trimmed.match(/@alias\s+(\S+)\s+(.+?)(?:\*\/|$)/);
+      if (combinedMatch && !alias) {
+        alias = combinedMatch[1];
+        pattern = combinedMatch[2].trim().replace(/\*\/$/, '').trim();
+        continue;
+      }
+      
+      // 旧格式：/* @alias xl */
       const aliasMatch = trimmed.match(/@alias\s+(\S+)/);
-      if (aliasMatch && !alias) alias = aliasMatch[1];
-      
+      if (aliasMatch && !alias) {
+        alias = aliasMatch[1];
+      }
+    }
+    
+    if (trimmed.includes('@pattern')) {
       const patternMatch = trimmed.match(/@pattern\s+(.+?)(?:\*\/|$)/);
-      if (patternMatch && !pattern) pattern = patternMatch[1].trim();
-      
-      continue;
+      if (patternMatch && !pattern) {
+        pattern = patternMatch[1].trim();
+      }
     }
     
     // 如果是注释行，继续查找

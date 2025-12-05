@@ -6,30 +6,24 @@
 :root {
   /* Tailwind CSS 方括号模式 - 间距 */
   
-  // @alias xl
-  // @pattern [%]
+  // @alias xl [%]
   --spacing-xl: 20px;
   
-  // @alias lg
-  // @pattern [%]
+  // @alias lg [%]
   --spacing-lg: 16px;
   
-  // @alias md
-  // @pattern [%]
+  // @alias md [%]
   --spacing-md: 12px;
   
-  // @alias sm
-  // @pattern [%]
+  // @alias sm [%]
   --spacing-sm: 8px;
   
   /* 颜色别名 - 带方括号模式 */
   
-  /* @alias primary */
-  /* @pattern [%] */
+  /* @alias primary [%] */
   --color-primary: #1E90FF;
   
-  /* @alias secondary */
-  /* @pattern [%] */
+  /* @alias secondary [%] */
   --color-secondary: #32CD32;
   
   /* 无模式的别名（只替换值本身） */
@@ -37,8 +31,7 @@
   --color-accent: #FF6B6B;
   
   /* var() 函数模式示例 */
-  // @alias bg-dark
-  // @pattern var(%%)
+  // @alias bg-dark var(%%)
   --bg-color-dark: #1a1a1a;
 }
 

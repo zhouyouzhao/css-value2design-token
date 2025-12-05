@@ -36,13 +36,12 @@
 
 ## @pattern 替换模式
 
-`@pattern` 让别名替换更智能，支持各种框架语法：
+通过在别名后添加模式，让替换更智能，支持各种框架语法：
 
 ### Tailwind CSS 方括号
 
 ```css
-// @alias xl
-// @pattern [%]
+// @alias xl [%]
 --spacing-xl: 20px;
 ```
 
@@ -52,12 +51,16 @@
 
 ```css
 // CSS 变量
-// @pattern var(%%)
+// @alias primary var(%%)
 --color-primary: #1E90FF;
 
 // 函数调用
-// @pattern calc(%)
+// @alias full calc(%)
 --full-width: 100%;
+
+// 无模式（只替换值本身）
+// @alias accent
+--color-accent: #FF6B6B;
 ```
 
 **`%` 代表选中的值**，模式定义了替换时包含的前后文本。
