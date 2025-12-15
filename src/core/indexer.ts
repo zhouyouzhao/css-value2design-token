@@ -8,13 +8,14 @@ import { normalizeCssValue } from './normalize';
 
 export type TokenHit = {
   name: string;          // --color-primary
-  value: string;         // 原始值（如 #1E90FF）
+  value: string;         // 原始值（如 #1E90FF 或 var(--neutral-4)）
   file: string;          // 文件绝对路径
   offset: number;        // 在文件中的字符偏移（用于跳转到定义）
   selector?: string;     // 来源选择器，如 ':root' / 'html' / '[data-theme=dark]' / 'theme'
   source?: 'theme' | 'root' | 'scoped';
   alias?: string;        // 别名，从 @alias 注释中提取
   pattern?: string;      // 替换模式，从 @pattern 注释中提取（% 代表选中的值）
+  referencedVar?: string; // 如果值是 var() 引用，存储被引用的变量名（如 --neutral-4）
 };
 
 export type FileInfo = {
@@ -49,6 +50,22 @@ export class TokenIndex {
 
   findByValue(normalized: string): TokenHit[] {
     return this.map.get(normalized) ?? [];
+  }
+
+  /**
+   * 查找引用了指定变量的所有 token
+   * 例如：findByReferencedVar('--neutral-4') 会找到所有 referencedVar === '--neutral-4' 的 token
+   */
+  findByReferencedVar(varName: string): TokenHit[] {
+    const results: TokenHit[] = [];
+    for (const hits of this.map.values()) {
+      for (const hit of hits) {
+        if (hit.referencedVar === varName) {
+          results.push(hit);
+        }
+      }
+    }
+    return results;
   }
 
   getAllIndexedFiles(): string[] {
@@ -127,25 +144,30 @@ export class TokenIndex {
     // 获取类白名单配置
     const classWhitelist = this.getClassWhitelist();
 
-    // 深度遍历：单独处理 Atrule(@theme) 与 Rule(选择器规则)
+    // 深度遍历：单独处理 Atrule(@theme / @theme inline) 与 Rule(选择器规则)
     csstree.walk(ast, {
       enter: (node: CssNode) => {
-        // 1) @theme {...}
+        // 1) @theme {...} 或 @theme inline {...}
         if (node.type === 'Atrule' && (node as Atrule).name === 'theme') {
           const at = node as Atrule;
           if (!at.block) return;
+          
+          // 提取 @theme 的 prelude（如 'inline'）
+          const prelude = at.prelude ? csstree.generate(at.prelude).trim() : '';
+          const selector = prelude ? `theme ${prelude}` : 'theme';
+          
           at.block.children?.forEach(child => {
             if (child.type === 'Declaration' && isCustomProp(child as Declaration)) {
               const { alias, pattern } = this.extractAliasAndPattern(css, child as Declaration);
-              this.addHitFromDecl(child as Declaration, file, 'theme', alias, pattern);
+              this.addHitFromDecl(child as Declaration, file, selector, alias, pattern);
               tokenCount++;
             }
             // 容错：@theme 内部嵌套选择器（极少见）
             if (child.type === 'Rule') {
               const rule = child as Rule;
-              const selector = csstree.generate(rule.prelude).trim();
-              if (isAllowedSelector(selector, classWhitelist)) {
-                collectFromRule(rule, selector, file, css, (h) => {
+              const ruleSelector = csstree.generate(rule.prelude).trim();
+              if (isAllowedSelector(ruleSelector, classWhitelist)) {
+                collectFromRule(rule, ruleSelector, file, css, (h) => {
                   this.addHit(h);
                   tokenCount++;
                 });
@@ -179,17 +201,25 @@ export class TokenIndex {
 
   private addHitFromDecl(decl: Declaration, file: string, source: string, alias?: string, pattern?: string) {
     const name = decl.property;                          // 如 --color-primary
-    const value = csstree.generate(decl.value).trim();   // 如 #1E90FF
+    const value = csstree.generate(decl.value).trim();   // 如 #1E90FF 或 var(--neutral-4)
     const norm = normalizeCssValue(value);               // 归一化
     if (!norm) return;
 
     const offset = decl.loc?.start.offset ?? 0;
+    const referencedVar = extractVarReference(value);    // 提取 var() 引用
+    
+    // 判断 source 类型：theme / theme inline 都算 theme
+    const sourceType: TokenHit['source'] = 
+      source === 'theme' || source.startsWith('theme ') ? 'theme' :
+      (source === ':root' || source === 'html' ? 'root' : 'scoped');
+    
     const hit: TokenHit = {
       name, value, file, offset,
       selector: source,
-      source: source === 'theme' ? 'theme' : (source === ':root' || source === 'html' ? 'root' : 'scoped'),
+      source: sourceType,
       alias,
-      pattern
+      pattern,
+      referencedVar
     };
 
     const arr = this.map.get(norm) ?? [];
@@ -277,11 +307,12 @@ export class TokenIndex {
   }
 
   private extractAliasAndPattern(css: string, decl: Declaration): { alias?: string; pattern?: string } {
-    // 从声明前面的注释中提取 @alias 和可选的 pattern
-    // 支持两种格式：
+    // 从声明前面的注释中提取 @alias、@pattern 和 @rm-prefix
+    // 支持格式：
     // 1. // @alias xl [%]  (一行，推荐)
     // 2. // @alias xl      (单独一行)
     //    // @pattern [%]   (单独一行)
+    // 3. /* @rm-prefix radius [%] */ (自动生成别名，去掉指定前缀，并指定模式)
     if (!decl.loc) return {};
     
     const lines = css.split('\n');
@@ -289,6 +320,8 @@ export class TokenIndex {
     
     let alias: string | undefined;
     let pattern: string | undefined;
+    let rmPrefix: string | undefined;
+    let rmPrefixPattern: string | undefined;
     
     // 向上查找注释
     for (let i = declLine - 1; i >= 0; i--) {
@@ -322,6 +355,16 @@ export class TokenIndex {
           continue;
         }
         
+        // 新功能：// @rm-prefix prefix-value [pattern]
+        const rmPrefixMatch = trimmed.match(/\/\/\s*@rm-prefix\s+(\S+)(?:\s+(.+))?/);
+        if (rmPrefixMatch && !rmPrefix) {
+          rmPrefix = rmPrefixMatch[1];
+          if (rmPrefixMatch[2]) {
+            rmPrefixPattern = rmPrefixMatch[2].trim();
+          }
+          continue;
+        }
+        
         continue;
       }
       
@@ -349,6 +392,17 @@ export class TokenIndex {
         }
       }
       
+      // 检查 @rm-prefix（支持带模式）
+      if (trimmed.includes('@rm-prefix')) {
+        const rmPrefixMatch = trimmed.match(/@rm-prefix\s+(\S+)(?:\s+(.+?))?(?:\*\/|$)/);
+        if (rmPrefixMatch && !rmPrefix) {
+          rmPrefix = rmPrefixMatch[1];
+          if (rmPrefixMatch[2]) {
+            rmPrefixPattern = rmPrefixMatch[2].trim().replace(/\*\/$/, '').trim();
+          }
+        }
+      }
+      
       // 如果是注释行，继续查找
       if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.endsWith('*/') || trimmed.startsWith('*')) {
         continue;
@@ -356,6 +410,16 @@ export class TokenIndex {
       
       // 如果遇到其他非注释内容，停止查找
       break;
+    }
+    
+    // 如果没有显式的 @alias，但有 @rm-prefix，自动生成别名
+    if (!alias && rmPrefix && decl.property) {
+      alias = generateAliasFromRmPrefix(decl.property, rmPrefix);
+    }
+    
+    // 如果 @rm-prefix 指定了 pattern，使用它
+    if (rmPrefixPattern && !pattern) {
+      pattern = rmPrefixPattern;
     }
     
     return { alias, pattern };
@@ -401,16 +465,54 @@ function collectFromRule(rule: Rule, selector: string, file: string, css: string
     // 提取别名和模式
     const { alias, pattern } = extractAliasAndPatternFromDecl(css, decl);
     
-    add({ name, value, file, offset, selector, source, alias, pattern });
+    // 提取 var() 引用
+    const referencedVar = extractVarReference(value);
+    
+    add({ name, value, file, offset, selector, source, alias, pattern, referencedVar });
   });
 }
 
+/**
+ * 从 var() 函数中提取被引用的变量名
+ * 例如: var(--color-primary) -> --color-primary
+ *      var(--spacing-xl, 20px) -> --spacing-xl
+ */
+function extractVarReference(value: string): string | undefined {
+  const varMatch = value.match(/^var\(\s*(--[a-zA-Z0-9-_]+)(?:\s*,\s*.*)?\s*\)$/i);
+  return varMatch ? varMatch[1] : undefined;
+}
+
+/**
+ * 根据 @rm-prefix 生成别名
+ * 例如: --radius-size-s + "radius" -> size-s
+ *      --color-primary-500 + "color" -> primary-500
+ * 
+ * @param varName 变量名（如 --radius-size-s）
+ * @param prefix 要移除的前缀（如 radius 或 radius-）
+ * @returns 生成的别名
+ */
+function generateAliasFromRmPrefix(varName: string, prefix: string): string {
+  // 1. 移除 -- 前缀
+  let result = varName.startsWith('--') ? varName.substring(2) : varName;
+  
+  // 2. 规范化 prefix：如果 prefix 不以 - 结尾，添加 -
+  const normalizedPrefix = prefix.endsWith('-') ? prefix : prefix + '-';
+  
+  // 3. 如果结果以 normalizedPrefix 开头，移除它
+  if (result.startsWith(normalizedPrefix)) {
+    result = result.substring(normalizedPrefix.length);
+  }
+  
+  return result;
+}
+
 function extractAliasAndPatternFromDecl(css: string, decl: Declaration): { alias?: string; pattern?: string } {
-  // 从声明前面的注释中提取 @alias 和可选的 pattern
-  // 支持两种格式：
+  // 从声明前面的注释中提取 @alias、@pattern 和 @rm-prefix
+  // 支持格式：
   // 1. // @alias xl [%]  (一行，推荐)
   // 2. // @alias xl      (单独一行)
   //    // @pattern [%]   (单独一行)
+  // 3. /* @rm-prefix radius [%] */ (自动生成别名，去掉指定前缀，并指定模式)
   if (!decl.loc) return {};
   
   const lines = css.split('\n');
@@ -418,6 +520,8 @@ function extractAliasAndPatternFromDecl(css: string, decl: Declaration): { alias
   
   let alias: string | undefined;
   let pattern: string | undefined;
+  let rmPrefix: string | undefined;
+  let rmPrefixPattern: string | undefined;
   
   // 向上查找注释
   for (let i = declLine - 1; i >= 0; i--) {
@@ -451,6 +555,16 @@ function extractAliasAndPatternFromDecl(css: string, decl: Declaration): { alias
         continue;
       }
       
+      // 新功能：// @rm-prefix prefix-value [pattern]
+      const rmPrefixMatch = trimmed.match(/\/\/\s*@rm-prefix\s+(\S+)(?:\s+(.+))?/);
+      if (rmPrefixMatch && !rmPrefix) {
+        rmPrefix = rmPrefixMatch[1];
+        if (rmPrefixMatch[2]) {
+          rmPrefixPattern = rmPrefixMatch[2].trim();
+        }
+        continue;
+      }
+      
       continue;
     }
     
@@ -478,6 +592,17 @@ function extractAliasAndPatternFromDecl(css: string, decl: Declaration): { alias
       }
     }
     
+    // 检查 @rm-prefix（支持带模式）
+    if (trimmed.includes('@rm-prefix')) {
+      const rmPrefixMatch = trimmed.match(/@rm-prefix\s+(\S+)(?:\s+(.+?))?(?:\*\/|$)/);
+      if (rmPrefixMatch && !rmPrefix) {
+        rmPrefix = rmPrefixMatch[1];
+        if (rmPrefixMatch[2]) {
+          rmPrefixPattern = rmPrefixMatch[2].trim().replace(/\*\/$/, '').trim();
+        }
+      }
+    }
+    
     // 如果是注释行，继续查找
     if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.endsWith('*/') || trimmed.startsWith('*')) {
       continue;
@@ -485,6 +610,16 @@ function extractAliasAndPatternFromDecl(css: string, decl: Declaration): { alias
     
     // 如果遇到其他非注释内容，停止查找
     break;
+  }
+  
+  // 如果没有显式的 @alias，但有 @rm-prefix，自动生成别名
+  if (!alias && rmPrefix && decl.property) {
+    alias = generateAliasFromRmPrefix(decl.property, rmPrefix);
+  }
+  
+  // 如果 @rm-prefix 指定了 pattern，使用它
+  if (rmPrefixPattern && !pattern) {
+    pattern = rmPrefixPattern;
   }
   
   return { alias, pattern };

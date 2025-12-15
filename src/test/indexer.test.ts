@@ -564,4 +564,283 @@ html {
     assert.ok(rgbHits.length >= 1, "Should find RGB color");
     assert.strictEqual(rgbHits[0].name, "--color-rgb");
   });
+
+  test("should parse var() references correctly", async () => {
+    const cssContent = `
+:root {
+  --neutral-4: #cccccc;
+  --color-neutral-4: var(--neutral-4);
+  --spacing-base: 16px;
+  --spacing-large: var(--spacing-base);
+  --color-primary-with-fallback: var(--primary, #1e40af);
+}
+		`;
+
+    const testFile = path.join(tempDir, "test-var-references.css");
+    await fs.writeFile(testFile, cssContent);
+
+    await tokenIndex.build();
+
+    // 测试基本的 var() 引用
+    const neutralHits = tokenIndex.findByValue("var(--neutral-4)");
+    assert.strictEqual(neutralHits.length, 1, "应该找到 var(--neutral-4) 引用");
+    assert.strictEqual(neutralHits[0].name, "--color-neutral-4");
+    assert.strictEqual(neutralHits[0].value, "var(--neutral-4)");
+    assert.strictEqual(neutralHits[0].referencedVar, "--neutral-4", "应该提取被引用的变量名");
+
+    // 测试另一个 var() 引用
+    const spacingHits = tokenIndex.findByValue("var(--spacing-base)");
+    assert.strictEqual(spacingHits.length, 1, "应该找到 var(--spacing-base) 引用");
+    assert.strictEqual(spacingHits[0].name, "--spacing-large");
+    assert.strictEqual(spacingHits[0].referencedVar, "--spacing-base");
+
+    // 测试带 fallback 的 var() 引用
+    const fallbackHits = tokenIndex.findByValue("var(--primary)");
+    assert.strictEqual(fallbackHits.length, 1, "应该找到带 fallback 的 var() 引用");
+    assert.strictEqual(fallbackHits[0].name, "--color-primary-with-fallback");
+    assert.strictEqual(fallbackHits[0].referencedVar, "--primary", "应该提取第一个变量名，忽略 fallback");
+
+    // 测试原始颜色值仍然可以被找到
+    const colorHits = tokenIndex.findByValue("#cccccc");
+    assert.strictEqual(colorHits.length, 1);
+    assert.strictEqual(colorHits[0].name, "--neutral-4");
+    assert.strictEqual(colorHits[0].referencedVar, undefined, "直接值不应该有 referencedVar");
+
+    // 测试原始尺寸值仍然可以被找到
+    const sizeHits = tokenIndex.findByValue("16px");
+    assert.strictEqual(sizeHits.length, 1);
+    assert.strictEqual(sizeHits[0].name, "--spacing-base");
+    assert.strictEqual(sizeHits[0].referencedVar, undefined);
+  });
+
+  test("should index tokens from @theme inline at-rule", async () => {
+    const cssContent = `
+:root {
+  --green-4: #78c49c;
+  --neutral-4: #edf0f2;
+}
+
+@theme inline {
+  --color-green-4: var(--green-4);
+  --color-neutral-4: var(--neutral-4);
+}
+		`;
+
+    const testFile = path.join(tempDir, "test-theme-inline.css");
+    await fs.writeFile(testFile, cssContent);
+
+    await tokenIndex.build();
+
+    // 测试 @theme inline 中的 var() 引用
+    const greenVarHits = tokenIndex.findByValue("var(--green-4)");
+    assert.strictEqual(greenVarHits.length, 1, "应该找到 var(--green-4) 引用");
+    assert.strictEqual(greenVarHits[0].name, "--color-green-4");
+    assert.strictEqual(greenVarHits[0].selector, "theme inline");
+    assert.strictEqual(greenVarHits[0].source, "theme");
+    assert.strictEqual(greenVarHits[0].referencedVar, "--green-4");
+
+    const neutralVarHits = tokenIndex.findByValue("var(--neutral-4)");
+    assert.strictEqual(neutralVarHits.length, 1, "应该找到 var(--neutral-4) 引用");
+    assert.strictEqual(neutralVarHits[0].name, "--color-neutral-4");
+    assert.strictEqual(neutralVarHits[0].selector, "theme inline");
+    assert.strictEqual(neutralVarHits[0].source, "theme");
+    assert.strictEqual(neutralVarHits[0].referencedVar, "--neutral-4");
+
+    // 测试原始颜色值可以被找到
+    const greenColorHits = tokenIndex.findByValue("#78c49c");
+    assert.strictEqual(greenColorHits.length, 1);
+    assert.strictEqual(greenColorHits[0].name, "--green-4");
+    assert.strictEqual(greenColorHits[0].selector, ":root");
+    assert.strictEqual(greenColorHits[0].source, "root");
+    assert.strictEqual(greenColorHits[0].referencedVar, undefined);
+
+    const neutralColorHits = tokenIndex.findByValue("#edf0f2");
+    assert.strictEqual(neutralColorHits.length, 1);
+    assert.strictEqual(neutralColorHits[0].name, "--neutral-4");
+    assert.strictEqual(neutralColorHits[0].selector, ":root");
+    assert.strictEqual(neutralColorHits[0].source, "root");
+  });
+
+  test("should support both @theme and @theme inline", async () => {
+    const cssContent = `
+@theme {
+  --base-color: #1e40af;
+}
+
+@theme inline {
+  --color-primary: var(--base-color);
+}
+		`;
+
+    const testFile = path.join(tempDir, "test-theme-both.css");
+    await fs.writeFile(testFile, cssContent);
+
+    await tokenIndex.build();
+
+    // 测试 @theme
+    const baseHits = tokenIndex.findByValue("#1e40af");
+    assert.strictEqual(baseHits.length, 1);
+    assert.strictEqual(baseHits[0].name, "--base-color");
+    assert.strictEqual(baseHits[0].selector, "theme");
+    assert.strictEqual(baseHits[0].source, "theme");
+
+    // 测试 @theme inline
+    const primaryHits = tokenIndex.findByValue("var(--base-color)");
+    assert.strictEqual(primaryHits.length, 1);
+    assert.strictEqual(primaryHits[0].name, "--color-primary");
+    assert.strictEqual(primaryHits[0].selector, "theme inline");
+    assert.strictEqual(primaryHits[0].source, "theme");
+    assert.strictEqual(primaryHits[0].referencedVar, "--base-color");
+  });
+
+  test("should find tokens by referenced variable name", async () => {
+    const cssContent = `
+:root {
+  --neutral-4: #edf0f2;
+  --green-4: #78c49c;
+}
+
+@theme inline {
+  --color-neutral-4: var(--neutral-4);
+  --color-green-4: var(--green-4);
+}
+		`;
+
+    const testFile = path.join(tempDir, "test-find-by-ref.css");
+    await fs.writeFile(testFile, cssContent);
+
+    await tokenIndex.build();
+
+    // 测试根据引用的变量名查找
+    const neutral4Refs = tokenIndex.findByReferencedVar("--neutral-4");
+    assert.strictEqual(neutral4Refs.length, 1, "应该找到 1 个引用 --neutral-4 的变量");
+    assert.strictEqual(neutral4Refs[0].name, "--color-neutral-4");
+    assert.strictEqual(neutral4Refs[0].referencedVar, "--neutral-4");
+
+    const green4Refs = tokenIndex.findByReferencedVar("--green-4");
+    assert.strictEqual(green4Refs.length, 1, "应该找到 1 个引用 --green-4 的变量");
+    assert.strictEqual(green4Refs[0].name, "--color-green-4");
+    assert.strictEqual(green4Refs[0].referencedVar, "--green-4");
+
+    // 测试查找不存在的引用
+    const nonExistentRefs = tokenIndex.findByReferencedVar("--non-existent");
+    assert.strictEqual(nonExistentRefs.length, 0, "不应该找到不存在的引用");
+  });
+
+  test("should support chained lookup - find both direct and referenced tokens", async () => {
+    const cssContent = `
+:root {
+  --neutral-4: #edf0f2;
+}
+
+@theme inline {
+  --color-neutral-4: var(--neutral-4);
+  --bg-neutral-4: var(--neutral-4);
+}
+		`;
+
+    const testFile = path.join(tempDir, "test-chained-lookup.css");
+    await fs.writeFile(testFile, cssContent);
+
+    await tokenIndex.build();
+
+    // 模拟链式查找：选中 #edf0f2 时，应该能找到所有相关的 token
+    // 1. 直接匹配：--neutral-4
+    const directHits = tokenIndex.findByValue("#edf0f2");
+    assert.strictEqual(directHits.length, 1, "应该找到 1 个直接匹配的变量");
+    assert.strictEqual(directHits[0].name, "--neutral-4");
+
+    // 2. 链式查找：所有引用 --neutral-4 的变量
+    const referencedHits = tokenIndex.findByReferencedVar("--neutral-4");
+    assert.strictEqual(referencedHits.length, 2, "应该找到 2 个引用 --neutral-4 的变量");
+    
+    const refNames = referencedHits.map(h => h.name).sort();
+    assert.deepStrictEqual(refNames, ["--bg-neutral-4", "--color-neutral-4"]);
+
+    // 3. 合并结果
+    const allHits = [...directHits, ...referencedHits];
+    assert.strictEqual(allHits.length, 3, "总共应该找到 3 个相关的变量");
+  });
+
+  test("should support @rm-prefix to auto-generate aliases", async () => {
+    // 注意：注释必须紧邻声明，中间不能有空行
+    const cssContent = `:root {
+  /* @rm-prefix radius */
+  --radius-size-test: 7px;
+}`;
+
+    const testFile = path.join(tempDir, "test-rm-prefix.css");
+    await fs.writeFile(testFile, cssContent);
+
+    await tokenIndex.build();
+
+    // 测试 @rm-prefix radius
+    const sizeTest = tokenIndex.findByValue("7px");
+    assert.strictEqual(sizeTest.length, 1, `应该找到 1 个 7px 的 token，但实际找到 ${sizeTest.length} 个`);
+    assert.strictEqual(sizeTest[0].name, "--radius-size-test");
+    assert.strictEqual(sizeTest[0].alias, "size-test", "别名应该是 size-test（去掉 radius- 前缀）");
+  });
+
+  test("should support @rm-prefix with pattern", async () => {
+    const cssContent = `:root {
+  /* @rm-prefix radius [%] */
+  --radius-size-s: 8px;
+  /* @rm-prefix color [%] */
+  --color-primary-500: #1e40af;
+}`;
+
+    const testFile = path.join(tempDir, "test-rm-prefix-pattern.css");
+    await fs.writeFile(testFile, cssContent);
+
+    await tokenIndex.build();
+
+    // 测试 @rm-prefix radius [%]
+    const sizeS = tokenIndex.findByValue("8px");
+    assert.strictEqual(sizeS.length, 1);
+    assert.strictEqual(sizeS[0].name, "--radius-size-s");
+    assert.strictEqual(sizeS[0].alias, "size-s", "别名应该是 size-s");
+    assert.strictEqual(sizeS[0].pattern, "[%]", "模式应该是 [%]");
+
+    // 测试 @rm-prefix color [%]
+    const primary = tokenIndex.findByValue("#1e40af");
+    assert.strictEqual(primary.length, 1);
+    assert.strictEqual(primary[0].name, "--color-primary-500");
+    assert.strictEqual(primary[0].alias, "primary-500", "别名应该是 primary-500");
+    assert.strictEqual(primary[0].pattern, "[%]", "模式应该是 [%]");
+  });
+
+  test("should prioritize @alias over @rm-prefix", async () => {
+    const cssContent = `:root {
+  /* @rm-prefix radius */
+  /* @alias custom-name */
+  --radius-size-l: 16px;
+}`;
+
+    const testFile = path.join(tempDir, "test-alias-priority.css");
+    await fs.writeFile(testFile, cssContent);
+
+    await tokenIndex.build();
+
+    const hits = tokenIndex.findByValue("16px");
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].name, "--radius-size-l");
+    assert.strictEqual(hits[0].alias, "custom-name", "应该优先使用 @alias 而不是 @rm-prefix");
+  });
+
+  test("should handle @rm-prefix with trailing dash", async () => {
+    const cssContent = `:root {
+  /* @rm-prefix radius- */
+  --radius-size-xl: 20px;
+}`;
+
+    const testFile = path.join(tempDir, "test-rm-prefix-dash.css");
+    await fs.writeFile(testFile, cssContent);
+
+    await tokenIndex.build();
+
+    const hits = tokenIndex.findByValue("20px");
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].name, "--radius-size-xl");
+    assert.strictEqual(hits[0].alias, "size-xl", "别名应该正确处理带 - 的前缀");
+  });
 });

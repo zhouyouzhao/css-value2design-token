@@ -1,0 +1,64 @@
+/* 
+ * var() 引用测试文件
+ * 演示 CSS 变量引用另一个变量的功能
+ * 格式：--color-neutral-4: var(--neutral-4);
+ */
+
+:root {
+  /* 基础颜色 */
+  --neutral-4: #cccccc;
+  --neutral-6: #999999;
+  --neutral-8: #666666;
+  
+  /* 语义化颜色（引用基础颜色） */
+  --color-neutral-4: var(--neutral-4);
+  --color-neutral-6: var(--neutral-6);
+  --color-neutral-8: var(--neutral-8);
+  
+  /* 基础尺寸 */
+  --spacing-base: 16px;
+  --spacing-small: 8px;
+  
+  /* 组件尺寸（引用基础尺寸） */
+  --button-padding: var(--spacing-base);
+  --card-gap: var(--spacing-small);
+  
+  /* 带 fallback 的引用 */
+  --primary-color: var(--theme-primary, #1e40af);
+  --secondary-color: var(--theme-secondary, #64748b);
+}
+
+@theme {
+  /* 主题颜色 */
+  --theme-primary: #1e40af;
+  --theme-secondary: #64748b;
+  
+  /* 引用主题颜色 */
+  --color-primary: var(--theme-primary);
+  --color-secondary: var(--theme-secondary);
+}
+
+[data-theme="dark"] {
+  /* 暗色主题覆盖 */
+  --neutral-4: #333333;
+  
+  /* 引用覆盖后的颜色 */
+  --text-color: var(--neutral-4);
+}
+
+/* 
+ * 使用方法：
+ * 
+ * 1. 选中 "var(--neutral-4)" 然后右键选择 "Find Design Token"
+ *    - 应该能找到 --color-neutral-4
+ *    - 详情中显示：var(--neutral-4) → 引用: --neutral-4
+ * 
+ * 2. 选中 "#cccccc" 然后右键选择 "Find Design Token"
+ *    - 应该能找到 --neutral-4
+ *    - 这是基础颜色定义
+ * 
+ * 3. 在代码中使用时：
+ *    .test {
+ *      color: var(--neutral-4);  ← 选中这个，应该能找到 --color-neutral-4 和 --text-color
+ *    }
+ */

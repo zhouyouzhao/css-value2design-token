@@ -1,0 +1,108 @@
+/* 
+ * @theme inline 功能测试文件
+ * 演示 Tailwind CSS v4 的 @theme inline 语法
+ */
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* Brand color palette */
+  --green-1: #f3f9f5;
+  --green-2: #e6f4ea;
+  --green-3: #9dd4b6;
+  --green-4: #78c49c;
+  --green-5: #54b482;
+  --green-6: #2d8a57;
+  --green-7: #247045;
+  --green-8: #1b5634;
+  --green-9: #123c23;
+  --green-10: #092211;
+
+  --blue-1: #e8f4ff;
+  --blue-2: #c8e4ff;
+  --blue-3: #9ccfff;
+  --blue-4: #6db9ff;
+  --blue-5: #42a4ff;
+  --blue-6: #1890ff;
+  --blue-7: #147ad9;
+  --blue-8: #1166b5;
+  --blue-9: #0e5291;
+  --blue-10: #0b4173;
+
+  --neutral-1: #fcfeff;
+  --neutral-2: #f9fbfc;
+  --neutral-3: #f3f4f5;
+  --neutral-4: #edf0f2;
+  --neutral-5: #d5dbde;
+  --neutral-6: #b9c1c7;
+  --neutral-7: #88949c;
+  --neutral-8: #5d6a72;
+  --neutral-9: #35454f;
+  --neutral-10: #303f48;
+}
+
+/* 
+ * @theme inline 用于创建引用基础变量的语义化变量
+ * 这样可以在 Tailwind 工具类中使用，例如：text-color-green-4
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-green-1: var(--green-1);
+  --color-green-2: var(--green-2);
+  --color-green-3: var(--green-3);
+  --color-green-4: var(--green-4);
+  --color-green-5: var(--green-5);
+  --color-green-6: var(--green-6);
+  --color-green-7: var(--green-7);
+  --color-green-8: var(--green-8);
+  --color-green-9: var(--green-9);
+  --color-green-10: var(--green-10);
+
+  --color-blue-1: var(--blue-1);
+  --color-blue-2: var(--blue-2);
+  --color-blue-3: var(--blue-3);
+  --color-blue-4: var(--blue-4);
+  --color-blue-5: var(--blue-5);
+  --color-blue-6: var(--blue-6);
+  --color-blue-7: var(--blue-7);
+  --color-blue-8: var(--blue-8);
+  --color-blue-9: var(--blue-9);
+  --color-blue-10: var(--blue-10);
+
+  --color-neutral-1: var(--neutral-1);
+  --color-neutral-2: var(--neutral-2);
+  --color-neutral-3: var(--neutral-3);
+  --color-neutral-4: var(--neutral-4);
+  --color-neutral-5: var(--neutral-5);
+  --color-neutral-6: var(--neutral-6);
+  --color-neutral-7: var(--neutral-7);
+  --color-neutral-8: var(--neutral-8);
+  --color-neutral-9: var(--neutral-9);
+  --color-neutral-10: var(--neutral-10);
+}
+
+/* 
+ * 使用方法测试：
+ * 
+ * 1. 选中 "var(--green-4)" 然后右键选择 "Find Design Token"
+ *    - 应该能找到 --color-green-4
+ *    - selector 显示为 "theme inline"
+ *    - 详情显示：var(--green-4) → 引用: --green-4
+ * 
+ * 2. 选中 "#78c49c" 然后右键选择 "Find Design Token"
+ *    - 应该能找到 --green-4
+ *    - selector 显示为 ":root"
+ * 
+ * 3. 选中 "var(--neutral-4)" 然后右键选择 "Find Design Token"
+ *    - 应该能找到 --color-neutral-4
+ *    - selector 显示为 "theme inline"
+ * 
+ * 4. 在实际使用中：
+ *    .card {
+ *      background: var(--green-4);  ← 选中这个，应该能找到 --color-green-4
+ *      color: #78c49c;              ← 选中这个，应该能找到 --green-4
+ *    }
+ */

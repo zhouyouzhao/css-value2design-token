@@ -26,10 +26,22 @@
    1. 选中 #1E90FF 然后右键选择 "Find Design Token"
    2. 选中 16px 然后右键选择 "Find Design Token"
    3. 选中一个不存在的值如 #999999 来测试文件浏览功能
+   4. (新功能) 选中 var(--color-primary) 测试变量引用解析
 */
+
+/* 测试 var() 引用功能 */
+:root {
+  --base-blue: #1E90FF;
+  
+  /* 这个变量引用了 --base-blue */
+  --color-primary: var(--base-blue);
+}
 
 .test-class {
   color: #1E90FF;
   margin: 16px;
   background: #999999; /* 这个值不存在对应的token */
+  
+  /* 测试：选中 var(--base-blue) 应该能找到 --color-primary */
+  border-color: var(--base-blue);
 }

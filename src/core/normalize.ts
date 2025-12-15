@@ -3,6 +3,14 @@ export function normalizeCssValue(v: string): string | null {
   if (!v) return null;
   const s = v.trim();
 
+  // var() 函数 -> 提取变量名并归一化
+  // 例如: var(--color-primary) -> var(--color-primary)
+  //      var(--spacing-xl, 20px) -> var(--spacing-xl)
+  const varMatch = s.match(/^var\(\s*(--[a-zA-Z0-9-_]+)(?:\s*,\s*.*)?\s*\)$/i);
+  if (varMatch) {
+    return `var(${varMatch[1]})`;
+  }
+
   // hex -> hex6/8 小写
   const hex = s.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
   if (hex) return canonicalHex(s);

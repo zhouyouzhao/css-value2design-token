@@ -39,11 +39,31 @@ export async function activate(ctx: vscode.ExtensionContext) {
           return;
         }
 
-        const hits = index.findByValue(norm);
-        if (!hits.length) {
+        // 1. 直接匹配：查找值匹配的 token
+        const directHits = index.findByValue(norm);
+        
+        // 2. 链式查找：对于找到的每个变量，查找引用它的 token
+        const referencedHits: TokenHit[] = [];
+        for (const hit of directHits) {
+          // 如果这个 token 不是 var() 引用（即它是一个基础定义），查找引用它的 token
+          if (!hit.referencedVar) {
+            const refs = index.findByReferencedVar(hit.name);
+            referencedHits.push(...refs);
+          }
+        }
+        
+        // 3. 合并结果并去重
+        const allHits = [...directHits, ...referencedHits];
+        const uniqueHits = Array.from(
+          new Map(allHits.map(h => [`${h.file}-${h.name}-${h.offset}`, h])).values()
+        );
+        
+        if (!uniqueHits.length) {
           await showNoTokenFoundDialog();
           return;
         }
+        
+        const hits = uniqueHits;
 
         // 创建自定义QuickPick以支持按钮
         const quickPick = vscode.window.createQuickPick();
@@ -67,6 +87,18 @@ export async function activate(ctx: vscode.ExtensionContext) {
           
           // 构建 detail 信息
           let detail = h.value;
+          
+          // 标记是否为引用匹配
+          const isDirectMatch = directHits.some(dh => 
+            dh.file === h.file && dh.name === h.name && dh.offset === h.offset
+          );
+          
+          if (h.referencedVar) {
+            detail += ` → 引用: ${h.referencedVar}`;
+            if (!isDirectMatch) {
+              detail += ' (链式查找)';
+            }
+          }
           if (h.alias) {
             detail += ` (别名: ${h.alias})`;
           }
