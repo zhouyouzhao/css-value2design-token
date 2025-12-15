@@ -68,7 +68,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         // 创建自定义QuickPick以支持按钮
         const quickPick = vscode.window.createQuickPick();
         
-        // 为每个token创建item，并添加按钮（跳转 + 别名替换）
+        // 为每个token创建item，并添加按钮（跳转 + var替换）
         quickPick.items = hits.map((h) => {
           const buttons: vscode.QuickInputButton[] = [
             {
@@ -77,11 +77,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
             }
           ];
           
-          // 如果有别名，添加别名替换按钮
+          // 如果有别名，添加强制使用 var() 的按钮
           if (h.alias) {
             buttons.push({
-              iconPath: new vscode.ThemeIcon('symbol-keyword'),
-              tooltip: `使用别名替换: ${h.alias}`
+              iconPath: new vscode.ThemeIcon('symbol-variable'),
+              tooltip: `使用 var(${h.name}) 替换`
             });
           }
           
@@ -100,10 +100,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
             }
           }
           if (h.alias) {
-            detail += ` (别名: ${h.alias})`;
-          }
-          if (h.pattern) {
-            detail += ` [模式: ${h.pattern}]`;
+            detail += ` (回车使用别名: ${h.alias})`;
+            if (h.pattern) {
+              detail += ` [模式: ${h.pattern}]`;
+            }
+          } else {
+            detail += ` (回车使用: var(${h.name}))`;
           }
           
           return {
@@ -115,16 +117,32 @@ export async function activate(ctx: vscode.ExtensionContext) {
           } as any;
         });
 
-        quickPick.placeholder = `匹配到 ${hits.length} 个 Token (回车替换为var，点击图标跳转或使用别名)`;
+        quickPick.placeholder = `匹配到 ${hits.length} 个 Token (回车替换，点击图标跳转)`;
 
-        // 处理选择（回车）- 替换为 var(--xxx)
+        // 处理选择（回车）- 优先使用别名，没有别名则用 var(--xxx)
         quickPick.onDidAccept(() => {
           const selected = quickPick.activeItems[0] as any;
           if (selected) {
             quickPick.hide();
-            editor.edit((edit) =>
-              edit.replace(range, replaceWithVar(selected.label)),
-            );
+            const tokenHit = selected.tokenHit as TokenHit;
+            
+            // 如果有别名，使用别名替换
+            if (tokenHit.alias) {
+              // 根据 pattern 扩展替换范围
+              const expandedRange = getExpandedRangeByPattern(
+                editor.document, 
+                range, 
+                tokenHit.pattern
+              );
+              editor.edit((edit) =>
+                edit.replace(expandedRange, tokenHit.alias!),
+              );
+            } else {
+              // 没有别名，使用 var(--xxx)
+              editor.edit((edit) =>
+                edit.replace(range, replaceWithVar(selected.label)),
+              );
+            }
           }
         });
 
@@ -139,16 +157,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
           if (buttonIndex === 0) {
             await jumpToTokenDefinition(item.tokenHit);
           }
-          // 第二个按钮：使用别名替换
+          // 第二个按钮：强制使用 var() 替换（当有别名时）
           else if (buttonIndex === 1 && item.tokenHit.alias) {
-            // 根据 pattern 扩展替换范围
-            const expandedRange = getExpandedRangeByPattern(
-              editor.document, 
-              range, 
-              item.tokenHit.pattern
-            );
             editor.edit((edit) =>
-              edit.replace(expandedRange, item.tokenHit.alias),
+              edit.replace(range, replaceWithVar(item.label)),
             );
           }
         });
